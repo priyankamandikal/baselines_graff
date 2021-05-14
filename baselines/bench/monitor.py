@@ -25,8 +25,12 @@ class Monitor(Wrapper):
         self.info_keywords = info_keywords
         self.allow_early_resets = allow_early_resets
         self.rewards = None
+        self.obj_lift = None
+        self.obj_grab = None
         self.needs_reset = True
         self.episode_rewards = []
+        self.episode_obj_lift = []
+        self.episode_obj_grab = []
         self.episode_lengths = []
         self.episode_times = []
         self.total_steps = 0
@@ -45,8 +49,9 @@ class Monitor(Wrapper):
         if not self.allow_early_resets and not self.needs_reset:
             raise RuntimeError("Tried to reset an environment before done. If you want to allow early resets, wrap your env with Monitor(env, path, allow_early_resets=True)")
         self.rewards = []
+        self.obj_lift = []
+        self.obj_grab = []
         self.needs_reset = False
-
 
     def step(self, action):
         if self.needs_reset:
@@ -57,14 +62,20 @@ class Monitor(Wrapper):
 
     def update(self, ob, rew, done, info):
         self.rewards.append(rew)
+        self.obj_lift.append(info['obj_lift'])
+        self.obj_grab.append(info['obj_grab'])
         if done:
             self.needs_reset = True
             eprew = sum(self.rewards)
+            eplift = sum(self.obj_lift)/200.
+            epgrab = sum(self.obj_grab)/200.
             eplen = len(self.rewards)
-            epinfo = {"r": round(eprew, 6), "l": eplen, "t": round(time.time() - self.tstart, 6)}
+            epinfo = {"r": round(eprew, 6), "obj_lift": eplift, "obj_grab": epgrab, "l": eplen, "t": round(time.time() - self.tstart, 6)}
             for k in self.info_keywords:
                 epinfo[k] = info[k]
             self.episode_rewards.append(eprew)
+            self.episode_obj_lift.append(eplift)
+            self.episode_obj_grab.append(epgrab)
             self.episode_lengths.append(eplen)
             self.episode_times.append(time.time() - self.tstart)
             epinfo.update(self.current_reset_info)
@@ -73,7 +84,6 @@ class Monitor(Wrapper):
             assert isinstance(info, dict)
             if isinstance(info, dict):
                 info['episode'] = epinfo
-
         self.total_steps += 1
 
     def close(self):
@@ -92,6 +102,7 @@ class Monitor(Wrapper):
     def get_episode_times(self):
         return self.episode_times
 
+
 class LoadMonitorResultsError(Exception):
     pass
 
@@ -109,7 +120,7 @@ class ResultsWriter(object):
         if isinstance(header, dict):
             header = '# {} \n'.format(json.dumps(header))
         self.f.write(header)
-        self.logger = csv.DictWriter(self.f, fieldnames=('r', 'l', 't')+tuple(extra_keys))
+        self.logger = csv.DictWriter(self.f, fieldnames=('r', 'obj_lift', 'obj_grab', 'l', 't')+tuple(extra_keys))
         self.logger.writeheader()
         self.f.flush()
 
@@ -121,6 +132,7 @@ class ResultsWriter(object):
 
 def get_monitor_files(dir):
     return glob(osp.join(dir, "*" + Monitor.EXT))
+
 
 def load_results(dir):
     import pandas
